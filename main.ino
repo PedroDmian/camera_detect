@@ -56,26 +56,107 @@ const char index_html[] PROGMEM = R"rawliteral(
     <h2>ESP32-CAM Last Photo</h2>
     <p>It might take more than 5 seconds to capture a photo.</p>
     <p>
-      <button onclick="rotatePhoto();">ROTATE</button>
+      <!--<button onclick="rotatePhoto();">ROTATE</button>-->
       <button onclick="capturePhoto()">CAPTURE PHOTO</button>
-      <button onclick="location.reload();">REFRESH PAGE</button>
+      <!--<button onclick="location.reload();">REFRESH PAGE</button>-->
     </p>
   </div>
-  <div><img src="saved-photo" id="photo" width="70%"></div>
+  <div><img src="saved-photo" id="photo" width="200" style="max-width 150px;"></div>
+
+  <div id="alert-message"><div>
 </body>
 <script>
   var deg = 0;
-  function capturePhoto() {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', "/capture", true);
-    xhr.send();
+  const API_VALID_SERVICE = 'http://127.0.0.1:5000';
 
-    setTimeout(() => {
-      location.reload();
+  async function capturePhoto() {
+    try {
+        let response = await fetch("/capture", { method: "GET" });
 
-      resolve();
-    }, 2000);
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
 
+        setTimeout(async () => {
+          await getPhoto();
+        }, 6000)
+    } catch (error) {
+        console.error("Error al capturar la foto:", error);
+    }
+  }
+
+  async function validateImage(imageBlob) {
+    try {
+      let formData = new FormData();
+      formData.append("file", imageBlob, "photo.jpg");
+
+      let response = await fetch(`${API_VALID_SERVICE}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+
+      document.getElementById("alert-message").innerHTML = responseData.message;
+    } catch(error) {
+      console.log('error :', error);
+
+      document.getElementById("alert-message").innerHTML = error.message;
+    }
+  }
+
+  async function request(url, method = "GET", data = null, headers = { "Content-Type": "application/json" }) {
+    try {
+        let options = {
+            method,
+            headers,
+        };
+
+        if (data) {
+            options.body = JSON.stringify(data);
+        }
+
+        let response = await fetch(url, options);
+
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+
+        let contentType = response.headers.get("Content-Type");
+
+        if (contentType.includes("application/json")) {
+          return await response.json();
+        } else if (contentType.includes("image")) {
+          return await response.blob();
+        } else {
+          return await response.text();
+        }
+    } catch (error) {
+        console.error("Error en la solicitud:", error);
+        return null;
+    }
+  }
+
+  async function getPhoto() {
+    let imageBlob = await request("/saved-photo", 'GET', null, {
+      "Accept": "image/jpeg"
+    });
+
+    console.log(imageBlob);
+    
+    if (imageBlob) {
+      await validateImage(imageBlob);
+
+      let imageUrl = URL.createObjectURL(imageBlob);
+
+      document.getElementById("photo").src = imageUrl;
+    } else {
+      console.error("No se pudo obtener la imagen");
+    }
   }
 
   function rotatePhoto() {
@@ -85,6 +166,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     else{ document.getElementById("container").className = "hori"; }
     img.style.transform = "rotate(" + deg + "deg)";
   }
+
   function isOdd(n) { return Math.abs(n % 2) == 1; }
 </script>
 </html>)rawliteral";
